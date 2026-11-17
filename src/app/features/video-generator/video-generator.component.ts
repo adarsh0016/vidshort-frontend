@@ -97,6 +97,12 @@ import { VideoPlayerComponent } from '@shared/components/video-player/video-play
 
               <p class="text-xs text-slate-200 font-medium leading-relaxed">{{ s.prompt }}</p>
 
+              <!-- Error details banner if failed -->
+              <div *ngIf="getGenerationForScene(s.id)?.errorMessage as errMsg" class="p-2.5 bg-red-950/40 border border-red-900/50 rounded-xl text-[11px] text-red-300 space-y-1">
+                <span class="font-bold flex items-center gap-1 text-red-400">⚠️ Generation Failed:</span>
+                <p class="leading-relaxed break-words">{{ errMsg }}</p>
+              </div>
+
               <div class="pt-2 flex items-center justify-between border-t border-dark-800/80">
                 <span class="text-[11px] text-slate-500">Camera: {{ s.cameraMovement }}</span>
 
@@ -176,13 +182,11 @@ export class VideoGeneratorComponent implements OnInit, OnDestroy {
     this.projectId = this.route.snapshot.paramMap.get('id') || '';
     if (this.projectId) {
       this.loadData();
-      // Poll generation status every 4 seconds
-      this.pollInterval = setInterval(() => this.pollGenerations(), 4000);
     }
   }
 
   ngOnDestroy(): void {
-    if (this.pollInterval) clearInterval(this.pollInterval);
+    this.stopPolling();
   }
 
   loadData(): void {
@@ -206,8 +210,28 @@ export class VideoGeneratorComponent implements OnInit, OnDestroy {
           const completed = this.generations.find(g => g.status === 'COMPLETED' && g.videoUrl);
           if (completed) this.selectedVideoUrl = completed.videoUrl || null;
         }
-      }
+
+        const hasActiveJobs = this.generations.some(g =>
+          g.status === 'QUEUED' || g.status === 'PROCESSING' || g.status === 'UPLOADING'
+        );
+
+        if (hasActiveJobs) {
+          if (!this.pollInterval) {
+            this.pollInterval = setInterval(() => this.pollGenerations(), 4000);
+          }
+        } else {
+          this.stopPolling();
+        }
+      },
+      error: () => this.stopPolling()
     });
+  }
+
+  stopPolling(): void {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
   }
 
   getGenerationForScene(sceneId: string): Generation | undefined {
@@ -221,7 +245,10 @@ export class VideoGeneratorComponent implements OnInit, OnDestroy {
 
   onGenerateScene(sceneId: string): void {
     this.generationService.generateSceneVideo(sceneId).subscribe({
-      next: res => {
+      next: () => {
+        if (!this.pollInterval) {
+          this.pollInterval = setInterval(() => this.pollGenerations(), 4000);
+        }
         this.pollGenerations();
       },
       error: err => alert(err.error?.message || 'Failed to queue generation')
