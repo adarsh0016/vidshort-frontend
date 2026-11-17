@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: vidshort-frontend
+    runtime: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist/ai-video-studio/browser
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
